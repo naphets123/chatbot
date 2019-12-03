@@ -1,17 +1,28 @@
 #file to run the chatbot
-from classes import Question, Conversation
+from questiontree import Tree,Node
+from functions import *
 #from functions import match_input, confirmation
-import spacy
-import datetime
-from functions import get_number
 
-Name = Question("What is your name?","Your name is")
-Trucks = Question("Do you own any trucks?",None)
-Number = Question("How many trucks do you own?","You own ",{"function":get_number})
-Brands = Question("What brands are your trucks?", "So the brands are",{"wordlist":["Scania","MAN","Volvo","Mercedes"]})
-Types = Question("What are the models of your trucks?", "So the types are", {"wordlist":["XLR-2000", "X-wing", "Millenium-falcon"]})
-Axes = Question("How many axes do they have?","They have ",{"function":get_number})
-Capacity = Question("What is their capacity","They have a capacity of ",{"function":get_number})
-Ending = Question("Thank you registering your fleet! After you confirm this dialogue will close.Have a nice day!",None)
-a = Conversation(str(datetime.datetime.now()),[Number,Brands,Types,Axes,Capacity,Ending])
-a.hold_conversation()
+
+Questions = [{"Title":"Name","Text":"Hello! What is your name?\n","control":get_Name},
+            {"Title":"CompanyName","Text":"What is the name of your company?\n","control":get_Name},
+            {"Title":"AnyTruck","Text":"Do you own any trucks?\n","control":confirmation},
+            {"Title":"NumTrucks","Text":"How many trucks do you own?\n","control":get_int},
+            {"Title":"Brand","Text":"What brands are your trucks from\n","control":get_brands},
+            {"Title":"NumBrand","Text":ask_number_brand,"control":get_int},
+            {"Title":"Type","Text":ask_types,"control":get_types},
+            {"Title":"NumType","Text":ask_number_type,"control":get_int},
+            {"Title":"Engine","Text":ask_engine_size,"control":get_float},
+            {"Title":"Axles","Text":ask_axles,"control":get_int},
+            {"Title":"Weight","Text":ask_weight,"control":get_int},
+            {"Title":"Load","Text":ask_load,"control":get_int},
+            {"Title":"End","Text":"Thank your for answering all question\n Have a nice day!","control":None}
+]
+
+Chat = Tree(Questions,"Conversation.txt",[])
+a = Node(0,Tree = Chat)
+finished = False
+while not finished:
+    finished = a.conversation()
+
+Chat.print_full_branches()
