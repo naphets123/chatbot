@@ -6,7 +6,6 @@ import datetime
 
 Questions = [{"Title":"Name","Text":"Hello! What is your name?\n","control":get_Name},
             {"Title":"CompanyName","Text":"What is the name of your company?\n","control":get_Name},
-            {"Title":"AnyTruck","Text":"Do you own any trucks?\n","control":confirmation},
             {"Title":"NumTrucks","Text":"How many trucks do you own?\n","control":get_int},
             {"Title":"Brand","Text":"What brands are your trucks from\n","control":get_brands},
             {"Title":"NumBrand","Text":ask_number_brand,"control":get_int},
