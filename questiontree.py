@@ -3,23 +3,8 @@ from functions import *
 import datetime
 
 
-
-Questions = [{"Title":"Name","Text":"Hello! What is your name?\n","control":get_Name},
-            {"Title":"CompanyName","Text":"What is the name of your company?\n","control":get_Name},
-            {"Title":"NumTrucks","Text":"How many trucks do you own?\n","control":get_int},
-            {"Title":"Brand","Text":"What brands are your trucks from\n","control":get_brands},
-            {"Title":"NumBrand","Text":ask_number_brand,"control":get_int},
-            {"Title":"Type","Text":ask_types,"control":get_types},
-            {"Title":"NumType","Text":ask_number_type,"control":get_int},
-            {"Title":"Engine","Text":ask_engine_size,"control":get_float},
-            {"Title":"Axles","Text":ask_axles,"control":get_int},
-            {"Title":"Weight","Text":ask_weight,"control":get_int},
-            {"Title":"Load","Text":ask_load,"control":get_int},
-            {"Title":"End","Text":"Thank your for answering all question\n Have a nice day!","control":None}
-]
-
 class Tree:
-    def __init__(self,Question,filename,Nodes=[]):
+    def __init__(self,Questions,filename,Nodes=[]):
         self.filename = filename
         self.Questions = Questions
         self.Nodes = Nodes
@@ -27,14 +12,15 @@ class Tree:
     #Provisorial Ouput of data
     def print_full_branches(self):
         for n in self.Nodes:
-            if Questions[-2]["Title"] in n.AllAnswers.keys():
+            if self.Questions[-2]["Title"] in n.AllAnswers.keys():
                 print(n.AllAnswers)
 
 class Node:
-    def __init__(self,state,Parent = None,AllAnswers={},Tree=None):
+    def __init__(self,state,Parent = None,AllAnswers={},Tree=None,Total=[0,0]):
         self.state = state
         self.Children = []
         self.Tree = Tree
+        self.Total = Total
         self.Answer = None
         self.Parent = Parent
         self.AllAnswers = AllAnswers
@@ -44,69 +30,107 @@ class Node:
         if self.Answer:
             if isinstance(self.Answer,list):
                 for i in range(len(self.Answer)):
-                    child_answerlist = dict(self.AllAnswers)
-                    child_answerlist.update({self.current_question["Title"]:self.Answer[i]})
-                    Child = Node(self.state + 1,self,child_answerlist,self.Tree)
-                    self.Children.append(Child)
-                    self.Tree.Nodes.append(Child)
+                    self.create_single_child(self.Answer[i],[1,1])
+                    self.Total[1]-=1
             else:
-                child_answerlist = dict(self.AllAnswers)
-                child_answerlist.update({self.current_question["Title"]:self.Answer})
-                Child = Node(self.state + 1,self,child_answerlist,self.Tree)
-                self.Children.append(Child)
-                self.Tree.Nodes.append(Child)
+                self.create_single_child(self.Answer,self.Total)
+ 
 
-                #### This is not really part of the tree but we want to track all nodes in this
+    def create_single_child(self,answer,Total):
+        child_answerlist = dict(self.AllAnswers)
+        child_answerlist.update({self.current_question["Title"]:answer})
+        Child = Node(self.state + 1,self,child_answerlist,self.Tree,Total)
+        self.Children.append(Child)
+        self.Tree.Nodes.append(Child)
 
     def ask_user_input(self,string):
         self.save(string)
         user_input = input(string)
         self.save(user_input)
         return user_input
+    
+    def msg_user(self,string):
+        self.save(string)
+        print(string)
 
     def save(self,string):
         f = open(self.Tree.filename,"a")
         f.write(string + "\n")
         f.close()
 
-    def back(self,string):
-        #If user made a mistake, let him roll back to the last question
-        if cancel(string,self):
-            ask_cancel = "Do you want to go back to the last question?\n"
-            user_input = self.ask_user_input(ask_cancel)
-            self.save(ask_cancel)
-            self.save(user_input)
-            if confirmation(user_input,self) and self.state != 0:
-                Parent = self.Parent
-                Parent.Children = []
-                Parent.Answer = None
-                Parent.current_question = Parent.Tree.Questions[Parent.state]
-                return True
+    
+    def drain_amount(self,amount):
+        if self.Parent == None or self.Parent.Total==[0,0]:
+            change = int(amount)
+            self.Total[0]=change
+            self.Total[1]=change
+        elif isinstance(self.Parent.Answer,list):
+            change = int(amount)-1
+            #check with change-1 due to assignment of 1 at creation of child
+            if self.Parent.Total[1]>=(change):
+                self.Total[0]+=change
+                self.Total[1]+=change
+                self.Parent.Total[1]-=change
+            else:
+                self.msg_user("Error, invalid number")
+        else: 
+            self.msg_user("Error")
+
+    def get_question(self):
+        if callable(self.current_question["Text"]):
+                question_string = self.current_question["Text"](self)
         else:
-            return False
-            
+            question_string = self.current_question["Text"]
+        return question_string
+
+
+    def roll_back(self):
+        #If user made a mistake, let him roll back to the last question
+        Parent = self.Parent
+        Parent.Children = []
+        Parent.Answer = None
+        Parent.current_question = Parent.Tree.Questions[Parent.state]
+        Parent.Total[1]=Parent.Total[0]
+    
+
+    def input_check(self,user_input,Node,check_option):
+        #Check if there is negation in the users answer
+        if cancel(user_input,self):
+            user_input = self.ask_user_input("Do you want to go back to the last question?\n")
+            if confirmation(user_input,self) and self.Parent != None:
+                self.roll_back()
+                return True, user_input, " "
+        #Otherwise if there is a function for checking the input
+        elif check_option:
+            checked_value = check_option(user_input,Node)
+            if checked_value in [None,[]]:
+                return False, checked_value, "Sorry could not understand your answer"
+            elif self.current_question["control"] == get_amount and self.Parent is not None:
+                if 1 <= int(checked_value) <= self.Parent.Total[1]+1:
+                    return True, checked_value, ""
+                else:
+                    return False, checked_value, "Sorry but this number is invalid, biggest possible number is " + str(self.Parent.Total[1]+1)
+            else:
+                return True, checked_value, " "
+        else:
+            return True, user_input, " "
+
 
     def ask(self):
-            #Get appropriate Question and ask the user
-            if callable(self.current_question["Text"]):
-                question_string = self.current_question["Text"](self)
-            else:
-                question_string = self.current_question["Text"]
-            user_input = self.ask_user_input(question_string)
-
-            #Check the user input for Error, first if he complains, then if his input is an valid answer
-            check = self.back(user_input)
-            if check:
-                self.Parent.conversation()
-                return True
-            valid_info = input_check(user_input,self,self.current_question["control"])
-            if valid_info not in [None,[]]:
-                self.Answer = valid_info
-                return True                
-            else:
-                Error_msg = "Sorry I could not understand your answer please try again"
-                self.save(Error_msg)
-                return False
+        #Get appropriate Question and ask the user
+        question_string = self.get_question()
+        user_input = self.ask_user_input(question_string)
+        #Check the user input for Error, first if he complains, then if his input is an valid answer
+        checked,valid_info,error_msg = self.input_check(user_input,self,self.current_question["control"])
+        if checked :
+            self.msg_user("Answer that was understood: " + stringify(valid_info))
+            self.Answer = valid_info
+            if self.current_question["control"] == get_amount:
+                self.drain_amount(self.Answer)
+            return True
+        else:
+            self.msg_user(error_msg)
+            return False
 
     def conversation(self):
         if self.current_question["Title"] == "End":
@@ -114,14 +138,17 @@ class Node:
             return True
         if not self.Answer:
                 answered = False
-                while answered == False:
+                while not answered:
                     answered = self.ask()
-
                 self.create_children()
                 return False
         else:
+            initial_list = self.Children
             for i in range(len(self.Children)):
+                if self.Children != initial_list:
+                    break
                 checked = self.Children[i].conversation()
+                
                 if checked:
                     return True
             return False

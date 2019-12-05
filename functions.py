@@ -10,7 +10,7 @@ with open("trucks.json","r") as f:
 nlp = spacy.load("en_core_web_sm")
 
 def is_Noun(token):
-    return token.tag_ in ["NNP","NNS"]
+    return token.tag_ in ["NNP","NNS","NNPS","X"]
 
 
 def stringify(user_input):
@@ -72,17 +72,49 @@ def get_number(user_input,Node=None,format=None):
         return None
 
 def get_int(user_input,Node):
-    return get_number(user_input,Node,format)
+    return get_number(user_input,Node,int)
 
 def get_float(user_input,Node):
-    return get_number(user_input,Node,format)
+    return get_number(user_input,Node,float)
 
+def get_amount(user_input,Node):
+    return get_int(user_input,Node)
+    """
+    amount = int(get_int(user_input,Node))
+    print(amount,Node.Total)
+    if Node.Total[0] == 0:
+        Node.Total[0] = amount
+        Node.Total[1] = amount
+    if amount > Node.Total[1]:
+        return None
+    else:
+        return str(amount)
+    """
 
 def get_Name(user_input,Node):
     input_doc = nlp(user_input)
+    persons = []
     for ent in input_doc.ents:
         if ent.label_ == "PERSON":
             return ent.text
+    if len(persons)>0:
+        return persons
+    tokens = []
+    for token in input_doc:
+        if is_Noun(token):
+            tokens.append(token.text)
+    if tokens != []:
+        return " ".join(tokens)
+    return None
+
+def get_Company(user_input,Node):
+    input_doc = nlp(user_input)
+    persons = []
+    for ent in input_doc.ents:
+        if ent.label_ in ["ORG","PRODUCT","PERSON"]:
+            return ent.text
+    if len(persons)>0:
+        return persons
     tokens = []
     for token in input_doc:
         if is_Noun(token):
@@ -90,6 +122,7 @@ def get_Name(user_input,Node):
         if tokens != []:
             return " ".join(tokens)
     return None
+
 
     
 def get_closest(wordlist,token):
