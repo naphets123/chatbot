@@ -9,31 +9,70 @@ class Tree:
         self.Questions = Questions
         self.Nodes = Nodes
     
+    def initiate(self):
+        root = Node(0,None,Tree=self)
+        self.Nodes.append(root)
+        finished = False
+        while not finished:
+            finished = root.conversation()
+
     #Provisorial Ouput of data
     def print_full_branches(self):
         for n in self.Nodes:
             if self.Questions[-2]["Title"] in n.AllAnswers.keys():
                 print(n.AllAnswers)
+    
+    def get_last_question(self):
+        last_asked = False
+        count = 1
+        while not last_asked:
+            last = self.Nodes[-count]
+            last_asked=last.asked
+            count+=1
+        return last
+
 
 class Node:
-    def __init__(self,state,Parent = None,AllAnswers={},Tree=None,Total=[0,0]):
+    def __init__(self,state,Parent = None,AllAnswers={},Tree=None,Total=[0,0],asked = None):
         self.state = state
         self.Children = []
         self.Tree = Tree
         self.Total = Total
+        self.asked = asked
         self.Answer = None
         self.Parent = Parent
         self.AllAnswers = AllAnswers
         self.current_question = self.Tree.Questions[state]
 
+    def is_branching(self):
+        if not isinstance(self.Answer,list):
+            return False
+        else:
+            if len(self.Answer) in [0,1]:
+                return False
+            else:
+                return True
+
+    def siblings_answered(self):
+        siblings = self.Parent.Children
+        counter = 0
+        for i in siblings:
+            if i.Answer is None:
+                counter+=1
+        if counter ==1:
+            return True
+        else:
+            return False
+
     def create_children(self):
         if self.Answer:
-            if isinstance(self.Answer,list):
+            branch = self.is_branching()
+            if branch:
                 for i in range(len(self.Answer)):
                     self.create_single_child(self.Answer[i],[1,1])
                     self.Total[1]-=1
             else:
-                self.create_single_child(self.Answer,self.Total)
+                self.create_single_child(self.Answer,[0,0])
  
 
     def create_single_child(self,answer,Total):
@@ -51,30 +90,52 @@ class Node:
     
     def msg_user(self,string):
         self.save(string)
-        print(string)
+        print(string + "\n")
 
     def save(self,string):
         f = open(self.Tree.filename,"a")
         f.write(string + "\n")
         f.close()
 
-    
-    def drain_amount(self,amount):
-        if self.Parent == None or self.Parent.Total==[0,0]:
-            change = int(amount)
-            self.Total[0]=change
-            self.Total[1]=change
-        elif isinstance(self.Parent.Answer,list):
-            change = int(amount)-1
-            #check with change-1 due to assignment of 1 at creation of child
-            if self.Parent.Total[1]>=(change):
-                self.Total[0]+=change
-                self.Total[1]+=change
-                self.Parent.Total[1]-=change
+    def drain(self):
+        if self.Parent is not None:
+            if self.current_question["input"]==get_amount:
+                amount = int(self.Answer)
+                if self.Parent.is_branching():
+                        change = amount-1
+                        if self.Parent.Total[1]>=(change):
+                            self.Total[0]+=change
+                            self.Total[1]+=change
+                            self.Parent.Total[1]-=change
+                elif self.Parent.Total == [0,0]:
+                    self.Total[0]=amount
+                    self.Total[1]=amount
+                else:
+                    self.Total[0]+=self.Parent.Total[1]
+                    self.Total[1]+=self.Parent.Total[1]
+                    self.Parent.Total[1]-=self.Total[1]
             else:
-                self.msg_user("Error, invalid number")
-        else: 
-            self.msg_user("Error")
+                #If we are not in a assigning totals, we just pass the identical totals to the next question
+                    self.Total[0]+=self.Parent.Total[1]
+                    self.Total[1]+=self.Parent.Total[1]
+                    self.Parent.Total[1]-=self.Total[1]
+
+
+    def roll_back(self):
+        #This function does the inverse to self.drain()
+        if len(self.Children)>1:
+            self.Total[1]+=len(self.Children)
+        self.Children = []
+        self.Answer = None
+        if self.Parent is not None and self.Parent.Total != [0,0]:
+            if self.Parent.is_branching():
+                self.Parent.Total[1]+=self.Total[1]-1
+                self.Total[0] = 1
+                self.Total[1] = 1
+            else:
+                self.Parent.Total[1]+=self.Total[0]
+                self.Total[0] = 0
+                self.Total[1] = self.Total[0]
 
     def get_question(self):
         if callable(self.current_question["Text"]):
@@ -84,55 +145,35 @@ class Node:
         return question_string
 
 
-    def roll_back(self):
-        #If user made a mistake, let him roll back to the last question
-        Parent = self.Parent
-        Parent.Children = []
-        Parent.Answer = None
-        Parent.current_question = Parent.Tree.Questions[Parent.state]
-        Parent.Total[1]=Parent.Total[0]
-    
-
-    def input_check(self,user_input,Node,check_option):
-        #Check if there is negation in the users answer
-        if cancel(user_input,self):
-            user_input = self.ask_user_input("Do you want to go back to the last question?\n")
-            if confirmation(user_input,self) and self.Parent != None:
-                self.roll_back()
-                return True, user_input, " "
-        #Otherwise if there is a function for checking the input
-        elif check_option:
-            checked_value = check_option(user_input,Node)
-            if checked_value in [None,[]]:
-                return False, checked_value, "Sorry could not understand your answer"
-            elif self.current_question["control"] == get_amount and self.Parent is not None:
-                if 1 <= int(checked_value) <= self.Parent.Total[1]+1:
-                    return True, checked_value, ""
-                else:
-                    return False, checked_value, "Sorry but this number is invalid, biggest possible number is " + str(self.Parent.Total[1]+1)
-            else:
-                return True, checked_value, " "
-        else:
-            return True, user_input, " "
-
 
     def ask(self):
+        #Check if answer to this question is already given by context and previous answers and skip asking
+        answered, answer = answer_clear(self)
+        if answered:
+            self.Answer = answer
+            self.asked = False
+            self.drain()
+            return True
         #Get appropriate Question and ask the user
         question_string = self.get_question()
         user_input = self.ask_user_input(question_string)
-        #Check the user input for Error, first if he complains, then if his input is an valid answer
-        checked,valid_info,error_msg = self.input_check(user_input,self,self.current_question["control"])
+        #Check if user wants to correct himself
+        if back_to_last_answer(user_input,self):
+            return True
+        #process the answer and check if it is valid
+        checked,valid_info,error_msg = input_value_check(user_input,self)
         if checked :
             self.msg_user("Answer that was understood: " + stringify(valid_info))
             self.Answer = valid_info
-            if self.current_question["control"] == get_amount:
-                self.drain_amount(self.Answer)
+            self.asked = True
+            self.drain()
             return True
         else:
             self.msg_user(error_msg)
             return False
 
     def conversation(self):
+        #This function is called to run the chatbot and recursively creates the Tree of questions
         if self.current_question["Title"] == "End":
             self.ask()
             return True

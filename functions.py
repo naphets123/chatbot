@@ -1,199 +1,88 @@
-import spacy
-from spacy.matcher import Matcher
-import nltk 
-from nltk.metrics import edit_distance
-import json
+from language import *
 
+def back_to_last_answer(user_input,Node):
+    if cancel(user_input,Node):
+        user_input = Node.ask_user_input("Do you want to go back to the last question?\n")
+        if confirmation(user_input,Node) and Node.Parent is not None:
+            last_asked = False
+            last = Node
+            while True:
 
-with open("trucks.json","r") as f:
-    Brand_list = json.load(f)
-nlp = spacy.load("en_core_web_sm")
-
-def is_Noun(token):
-    return token.tag_ in ["NNP","NNS","NNPS","X"]
-
-
-def stringify(user_input):
-    if isinstance(user_input,str):
-        return user_input
-    elif isinstance(user_input,list):
-        return ", ".join(user_input)
-    else:
-        return False
-
-def phrase_checker(phrase,pattern_list):
-    matcher = Matcher(nlp.vocab)
-    for i in range(len(pattern_list)):
-        matcher.add("Confirmation", None, pattern_list[i])
-    doc = nlp(phrase)
-    matches = matcher(doc)
-    return matches
-
-def confirmation(phrase,Node):
-    #Function to check if user confirms last statement
-    matches = phrase_checker(phrase,[[{"LOWER": "yes"}],[{"LOWER": "correct"}],[{"LOWER": "right"}],[{"LOWER": "true"}]])
-    if len(matches) > 0 and not cancel(phrase,Node):
-        return True
-    else:
-        return False
-    
-def cancel(phrase,Node):
-    #Function to check if user confirms last statement
-    matches = phrase_checker(phrase,[[{"LOWER": "back"}],[{"LOWER": "stop"}],[{"LOWER": "false"}],[{"LOWER": "no"}]])
-    doc = nlp(phrase)
-    if len(matches) > 0:
-        return True
-    for token in doc:
-        if token.dep_ == "neg":
+                last = Node.Tree.Nodes.pop()
+                last.roll_back()
+                last_asked=last.asked
+                if last_asked or Node.Tree.Nodes == []:
+                    break
+            last.asked = None
+            last.conversation()
             return True
+        else:
+             return False
     else:
         return False
 
-def input_check(user_input,Node,check_option):
-    if check_option:
-        return check_option(user_input,Node)
-    return user_input
 
-def get_number(user_input,Node=None,format=None):
-    input_doc = nlp(user_input)
-    numbers = []
-    for token in input_doc:
-        if token.pos_ == "NUM":
-            numbers.append(token.text)
+def answer_clear(Node):
+    #Currently this check will only happen
+    Parent = Node.Parent
+    if Parent is not None and Node.current_question["input"]==get_amount:
+        check_branch = Parent.is_branching()
+        check_total = Parent.Total[1]==0
+        if check_branch and check_total:
+            return True, 1
+        elif Node.siblings_answered() and check_branch:
+            #if there is only a single option left give it all the remaining trucks
+            return True, Node.Parent.Total[1]+1
+        elif not check_branch and Parent.Total[0] != 0:
+            Node.Total[0]=Node.Parent.Total[1]
+            Node.Total[1]=Node.Total[0]
+            return True, Node.Parent.Total[1]
         else:
-            try:
-                format(token.text)
-                numbers.append(token.text)
-            except ValueError:
-                pass
-    if len(numbers)>0:
-        return numbers[0]
+            return False, None
     else:
-        return None
+        return False, None
 
-def get_int(user_input,Node):
-    return get_number(user_input,Node,int)
-
-def get_float(user_input,Node):
-    return get_number(user_input,Node,float)
-
-def get_amount(user_input,Node):
-    return get_int(user_input,Node)
-    """
-    amount = int(get_int(user_input,Node))
-    print(amount,Node.Total)
-    if Node.Total[0] == 0:
-        Node.Total[0] = amount
-        Node.Total[1] = amount
-    if amount > Node.Total[1]:
-        return None
+def input_value_check(user_input,Node):
+    #Otherwise if there is a function for checking the input
+    get_value = Node.current_question["input"]
+    check_option = Node.current_question["control"]
+    received_value = get_value(user_input,Node)
+    if received_value is None or  received_value == []:
+        return False, received_value, "Sorry, I could not understand your answer"
     else:
-        return str(amount)
-    """
+        if check_option is not None:
+            return check_option(received_value,Node)
+        else:
+            return True, received_value,""
 
-def get_Name(user_input,Node):
-    input_doc = nlp(user_input)
-    persons = []
-    for ent in input_doc.ents:
-        if ent.label_ == "PERSON":
-            return ent.text
-    if len(persons)>0:
-        return persons
-    tokens = []
-    for token in input_doc:
-        if is_Noun(token):
-            tokens.append(token.text)
-    if tokens != []:
-        return " ".join(tokens)
-    return None
+def valid_options(answer,Node):
+        if isinstance(answer,list):
+            answerlength = len(answer)
+        else:
+            answerlength = 1
+        if answerlength>Node.Parent.Total[0]:
+            return False,answer, "Invalid number of options chosen, maximum possible number is " + str(Node.Parent.Total[0])
+        else:
+            return True,answer,""
 
-def get_Company(user_input,Node):
-    input_doc = nlp(user_input)
-    persons = []
-    for ent in input_doc.ents:
-        if ent.label_ in ["ORG","PRODUCT","PERSON"]:
-            return ent.text
-    if len(persons)>0:
-        return persons
-    tokens = []
-    for token in input_doc:
-        if is_Noun(token):
-            tokens.append(token.text)
-        if tokens != []:
-            return " ".join(tokens)
-    return None
+def valid_amount(amount,Node):
+    if Node.Parent is not None and Node.Parent.Total[0] is not 0:
+        if 1 <= int(amount) <= Node.Parent.Total[1]+1:
+            return True,str(amount),""
+        else:
+            return False,str(amount),"Invalid value. It shoulb be between 1 and " + str(Node.Parent.Total[1]+1)
+    else:
+        return True,amount,""
 
 
     
-def get_closest(wordlist,token):
-    distance = 1000
-    closest = None
-    for j in wordlist:
-        t_distance = edit_distance(j.lower(),token.text.lower())
-        if t_distance < distance:
-            closest = j
-            distance = t_distance
-    if closest is not None:
-        return True, closest
-    else:
-        return False, ""
 
 
 
-def match_list(user_input,Node,expected_input):
-    text_spacy = nlp(user_input)
-    text_matches = []
-    for token in text_spacy:
-        candidates = []
-        for result in expected_input:
-            if is_Noun(token) and (token.text.lower() in result.lower()):
-                candidates.append(result)
-            else:
-                distance = edit_distance(result.lower(),token.text.lower())
-                if distance < 2:
-                    candidates.append(result)
-        success,match = get_closest(candidates,token)
-        if success:
-            text_matches.append(match)
-    return text_matches
-
-def get_brands(user_input,Node,wordlist = Brand_list.keys()):
-    return match_list(user_input,Node,Brand_list.keys())
-
-def get_model_list(Node,dict):
-    return dict[Node.AllAnswers["Brand"]]
-
-def get_types(user_input,Node,model_dict = Brand_list):
-    return match_list(user_input,Node,get_model_list(Node,model_dict))
 
 
-#All generated Questions are generated by this function
-def ask_reference(Text,Reference,Node):
-    return_string = Text + Node.AllAnswers[Reference] + "?\n"
-    return return_string
 
-def ask_number_brand(Node):
-    return ask_reference("How many of your trucks are from ","Brand",Node)
 
-def ask_number_type(Node):
-    return ask_reference("How many of your trucks are of type ","Type",Node)
 
-def ask_types(Node):
-    return ask_reference("What types are your trucks from ","Brand",Node) + type_list(Node)
-
-def type_list(Node,type_dict=Brand_list):
-    return "Options: " + " ".join(type_dict[Node.AllAnswers["Brand"]]) + "\n"
-
-def ask_engine_size(Node):
-    return ask_reference("What size is the engine of the trucks from model ","Type",Node)
-
-def ask_axles(Node):
-    return ask_reference("How many axles have the trucks of type ","Type",Node)
-
-def ask_weight(Node):
-    return ask_reference("What is the weight of trucks of type ","Type",Node)
-
-def ask_load(Node):
-    return ask_reference("What is the maximal load of the trucks of type ", "Type",Node)
 
 

@@ -31,6 +31,8 @@ for e in table.Model.unique():
 for k in Brand_models.keys():
     Brand_models[k] = list(dict.fromkeys(Brand_models[k]))
 
+Brand_models.update({"Daimler":Brand_models["Mercedes-Benz"][:]})
+
 #Prevent empty elements
 Brand_models = {key:val for key, val in Brand_models.items() if val != []}
 with open('trucks.json','w') as f:
